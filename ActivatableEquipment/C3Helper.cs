@@ -93,7 +93,7 @@ namespace CustomActivatableEquipment {
       Vector3 alternateAttackPos = GetC3CachedPos(attacker, target);
       if (alternateAttackPos != Vector3.zero) {
         float alternateDist = Vector3.Distance(alternateAttackPos, targetPosition);
-        if (alternateDist < realDist) {
+        if (realDist >= minRange && alternateDist < realDist) {
           if (alternateDist < minRange) { distance = minRange; } else { distance = alternateDist; }
         }
       }
