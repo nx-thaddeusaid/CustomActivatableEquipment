@@ -13,5 +13,6 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-namespace CustomActivatableEquipment {
+namespace CustomActivatableEquipment
+{
 }

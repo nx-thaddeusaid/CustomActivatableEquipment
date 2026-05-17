@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+# Check whitespace formatting on staged C# changes
+CHANGED_CSPROJ=""
+if git diff --cached --name-only | grep -q "ActivatableEquipment/"; then
+    CHANGED_CSPROJ="$CHANGED_CSPROJ ActivatableEquipment/CustomActivatableEquipment.csproj"
+fi
+if git diff --cached --name-only | grep -q "ComponentRefInjector/"; then
+    CHANGED_CSPROJ="$CHANGED_CSPROJ ComponentRefInjector/ComponentRefInjector.csproj"
+fi
+
+for proj in $CHANGED_CSPROJ; do
+    echo "Checking whitespace: $proj"
+    dotnet format whitespace --verify-no-changes "$proj"
+done
+
+# Validate staged JSON files
+STAGED_JSON=$(git diff --cached --name-only --diff-filter=ACM | grep '\.json$' || true)
+if [ -n "$STAGED_JSON" ]; then
+    python3 .github/scripts/validate_json.py
+fi

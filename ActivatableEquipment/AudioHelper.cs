@@ -1,4 +1,6 @@
-﻿namespace CustomActivatableEquipment {
-  public static class AudioHelper {
-  }
+﻿namespace CustomActivatableEquipment
+{
+    public static class AudioHelper
+    {
+    }
 }

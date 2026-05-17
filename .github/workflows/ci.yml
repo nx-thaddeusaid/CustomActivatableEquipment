@@ -1,0 +1,96 @@
+on: push
+name: CI
+
+jobs:
+  validate-json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate JSON files
+        run: python .github/scripts/validate_json.py
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10
+      - name: Check whitespace formatting
+        run: |
+          dotnet format whitespace --verify-no-changes ActivatableEquipment/CustomActivatableEquipment.csproj
+          dotnet format whitespace --verify-no-changes ComponentRefInjector/ComponentRefInjector.csproj
+
+  nuget-vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10
+      - name: Restore packages
+        run: dotnet restore ActivatableEquipment/CustomActivatableEquipment.csproj
+        continue-on-error: true  # HintPath DLLs absent in CI; only NuGet packages matter here
+      - name: NuGet vulnerability scan
+        run: dotnet list ActivatableEquipment/CustomActivatableEquipment.csproj package --vulnerable --include-transitive 2>&1 | tee /tmp/vuln.txt && ! grep -q "has the following vulnerable" /tmp/vuln.txt
+
+  build:
+    uses: BattletechModders/ModTek/.github/workflows/mod-builder.yml@master
+    with:
+      checkout-directory: 'BATTLETECH/Mods/CustomActivatableEquipment'
+      build-script: |
+        MODS="$BATTLETECH_DIR/Mods"
+
+        # Harmony ships under lib/ in current ModTek; .csproj references Harmony12X/ (legacy path)
+        mkdir -p "$MODS/ModTek/Harmony12X"
+        cp "$MODS/ModTek/lib/0Harmony12.dll" "$MODS/ModTek/Harmony12X/0Harmony.dll"
+
+        # Download publicly released mod dependencies
+        (
+          cd "$MODS"
+          curl -fsSL -o CustomComponents.zip \
+            https://github.com/BattletechModders/CustomComponents/releases/download/latest/CustomComponents.zip \
+            && unzip -q -o CustomComponents.zip || echo "WARN: CustomComponents download failed"
+
+          curl -fsSL -o IRBTModUtils.zip \
+            https://github.com/BattletechModders/IRBTModUtils/releases/download/latest/IRBTModUtils.zip \
+            && unzip -q -o IRBTModUtils.zip || echo "WARN: IRBTModUtils download failed"
+        )
+
+        # CustomPrewarm and CustomLocalSettings have no public releases;
+        # they are bundled in the RogueTech repo under Core/.
+        # Sparse-checkout just those two directories.
+        git clone --depth 1 --filter=blob:none --sparse \
+          https://github.com/BattletechModders/RogueTech.git /tmp/rt-sparse
+        git -C /tmp/rt-sparse sparse-checkout set \
+          Core/CustomPrewarm Core/CustomLocalSettings Core/CustomAmmoCategories
+        mkdir -p "$MODS/Core"
+        cp -r /tmp/rt-sparse/Core/CustomPrewarm   "$MODS/Core/"
+        cp -r /tmp/rt-sparse/Core/CustomLocalSettings "$MODS/Core/"
+        cp -r /tmp/rt-sparse/Core/CustomAmmoCategories "$MODS/Core/"
+
+        # Build main project
+        (
+          cd ActivatableEquipment
+          dotnet build --configuration Release -p:BattleTechGameDir="$BATTLETECH_DIR/"
+        )
+
+        # Build ComponentRefInjector
+        (
+          cd ComponentRefInjector
+          dotnet build --configuration Release -p:BattleTechGameDir="$BATTLETECH_DIR/"
+        )
+
+        # Package output
+        mkdir -p "$DIST_DIR"
+        7z a -tzip -mx9 "$DIST_DIR/CustomActivatableEquipment.zip" \
+          AdditionalFiles \
+          ActivatableEquipment/bin/Release/CustomActivatableEquipment.dll \
+          "-xr!.*"
+      release-notes: |
+        Requires ModTek to be up-to-date.
+        CustomActivatableEquipment.zip contains the mod.
+    secrets: inherit
